@@ -50,6 +50,34 @@
               </v-slide-item>
             </v-slide-group>
 
+            <v-slide-group
+              v-if="systems.activeValue === xsys.all"
+              v-model="explore.typeFilter"
+              multiple
+              center-active
+              show-arrows
+              class="mb-3"
+            >
+              <v-slide-item
+                v-for="(item, i) in explore.types"
+                :key="item.type"
+                v-slot="{ active, toggle }"
+                :value="item.type"
+              >
+                <v-btn
+                  :input-value="active"
+                  active-class="light-blue white--text"
+                  small
+                  depressed
+                  rounded
+                  :class="{ 'ml-1': i > 0 }"
+                  @click="toggle"
+                >
+                  {{ item.type }} ({{ item.numGroup }})
+                </v-btn>
+              </v-slide-item>
+            </v-slide-group>
+
             <GroupTable
               :date-range="dateRange"
               :systems="systems"
@@ -83,6 +111,9 @@ import { useSpanExplore } from '@/use/span-explore'
 
 // Components
 import GroupTable from '@/components/GroupTable.vue'
+
+// Utitlies
+import { xsys } from '@/models/otelattr'
 
 export default defineComponent({
   name: 'GroupList',
@@ -137,7 +168,11 @@ export default defineComponent({
       },
     )
 
-    return { activeColumns, explore }
+    return {
+      xsys,
+      activeColumns,
+      explore,
+    }
   },
 })
 </script>

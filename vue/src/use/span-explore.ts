@@ -1,6 +1,6 @@
 import { format } from 'sql-formatter'
 import { orderBy } from 'lodash'
-import { computed, watch, proxyRefs } from '@vue/composition-api'
+import { computed, watch, proxyRefs, shallowRef } from '@vue/composition-api'
 
 // Composables
 import { usePager, PagerConfig } from '@/use/pager'
@@ -9,7 +9,7 @@ import { useWatchAxios, AxiosRequestSource } from '@/use/watch-axios'
 import { QueryPart } from '@/use/uql'
 
 // Utilities
-import { xkey } from '@/models/otelattr'
+import { xkey, splitTypeSystem } from '@/models/otelattr'
 
 export interface ColumnInfo {
   name: string
@@ -26,6 +26,11 @@ interface SpanExploreConfig {
   order?: Order
 }
 
+interface TypeItem {
+  type: string
+  numGroup: number
+}
+
 export function useSpanExplore(reqSource: AxiosRequestSource, cfg: SpanExploreConfig = {}) {
   const pager = usePager(cfg.pager ?? { perPage: 10 })
   const order = useOrder(
@@ -34,6 +39,7 @@ export function useSpanExplore(reqSource: AxiosRequestSource, cfg: SpanExploreCo
       desc: true,
     },
   )
+  const typeFilter = shallowRef<string[]>([])
 
   const { loading, error, data } = useWatchAxios(
     () => {
@@ -46,14 +52,29 @@ export function useSpanExplore(reqSource: AxiosRequestSource, cfg: SpanExploreCo
     return data.value?.groups ?? []
   })
 
+  const filteredItems = computed(() => {
+    if (!typeFilter.value.length) {
+      return items.value
+    }
+
+    return items.value.filter((item) => {
+      const system = item[xkey.spanSystem]
+      if (!system) {
+        return true
+      }
+      const [typ] = splitTypeSystem(system)
+      return typeFilter.value.indexOf(typ) >= 0
+    })
+  })
+
   const sortedItems = computed((): ExploreItem[] => {
     if (!order.column) {
-      return items.value
+      return filteredItems.value
     }
 
     const isDate = isDateField(order.column)
     return orderBy(
-      items.value,
+      filteredItems.value,
       (item: ExploreItem) => {
         const val = item[order.column!]
         return isDate ? new Date(val) : val
@@ -96,8 +117,47 @@ export function useSpanExplore(reqSource: AxiosRequestSource, cfg: SpanExploreCo
     return format(error.value?.response?.data?.query ?? '')
   })
 
+  const types = computed((): TypeItem[] => {
+    const typeMap: Record<string, TypeItem> = {}
+
+    for (let item of items.value) {
+      const system = item[xkey.spanSystem]
+      if (!system) {
+        continue
+      }
+
+      const [type] = splitTypeSystem(system)
+      let typeItem = typeMap[type]
+      if (!typeItem) {
+        typeItem = {
+          type,
+          numGroup: 0,
+        }
+        typeMap[type] = typeItem
+      }
+      typeItem.numGroup++
+    }
+
+    const types: TypeItem[] = []
+
+    for (let type in typeMap) {
+      types.push(typeMap[type])
+    }
+
+    orderBy(types, 'type')
+    return types
+  })
+
   watch(
     items,
+    (items) => {
+      pager.numItem = items.length
+    },
+    { immediate: true, flush: 'pre' },
+  )
+
+  watch(
+    filteredItems,
     (items) => {
       pager.numItem = items.length
     },
@@ -112,6 +172,8 @@ export function useSpanExplore(reqSource: AxiosRequestSource, cfg: SpanExploreCo
 
     items: sortedItems,
     pageItems,
+    typeFilter,
+    types,
 
     queryParts,
     columns,
